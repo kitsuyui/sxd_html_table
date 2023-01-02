@@ -11,4 +11,5 @@ repository = "https://github.com/kitsuyui/sxd_html_table"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sxd-xpath = "0.4.2"
 sxd_html = "0.1.0"
