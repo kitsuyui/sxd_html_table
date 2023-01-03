@@ -79,7 +79,7 @@ pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
     let package = sxd_html::parse_html(html);
     let document = package.as_document();
     #[allow(clippy::expect_used)]
-    let val = evaluate_xpath_node(document.root(), "//table2").expect("XPath evaluation failed");
+    let val = evaluate_xpath_node(document.root(), "//table").expect("XPath evaluation failed");
 
     let Value::Nodeset(table_nodes) = val else {
         panic!("Expected node set");
@@ -96,13 +96,13 @@ pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
 
 fn extract_table(node: &Node) -> Result<Table, Error> {
     let mut table = Table::new();
-    let tr_nodes = match evaluate_xpath_node(*node, ".//tr2") {
+    let tr_nodes = match evaluate_xpath_node(*node, "./tbody/tr") {
         Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
         _ => return Err(Error::InvalidDocument),
     };
     let tr_nodes = tr_nodes.document_order();
     for (i, tr) in tr_nodes.iter().enumerate() {
-        let td_nodes = match evaluate_xpath_node(*tr, ".//td2") {
+        let td_nodes = match evaluate_xpath_node(*tr, "./td") {
             Ok(Value::Nodeset(td_nodes)) => td_nodes,
             _ => return Err(Error::InvalidDocument),
         };
@@ -138,12 +138,12 @@ mod tests {
         let html = r#"
         <html>
             <body>
-                <table2>
-                    <tr2>
-                        <td2>1</td2>
-                        <td2>2</td2>
-                    </tr2>
-                </table2>
+                <table>
+                    <tr>
+                        <td>1</td>
+                        <td>2</td>
+                    </tr>
+                </table>
             </body>
         </html>
         "#;
@@ -155,18 +155,18 @@ mod tests {
         let html = r#"
         <html>
             <body>
-                <table2>
-                    <tr2>
-                        <td2>1</td2>
-                        <td2>2</td2>
-                    </tr2>
-                </table2>
-                <table2>
-                    <tr2>
-                        <td2>3</td2>
-                        <td2>4</td2>
-                    </tr2>
-                </table2>
+                <table>
+                    <tr>
+                        <td>1</td>
+                        <td>2</td>
+                    </tr>
+                </table>
+                <table>
+                    <tr>
+                        <td>3</td>
+                        <td>4</td>
+                    </tr>
+                </table>
             </body>
         </html>
         "#;
