@@ -4,6 +4,7 @@ use sxd_xpath::{nodeset::Node, Context, Factory, Value};
 pub enum Error {
     TableNotFound,
     InvalidDocument,
+    FailedToConvertToCSV,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -55,23 +56,28 @@ impl Table {
         &self.rows
     }
 
-    pub fn to_csv(&self) -> String {
-        let mut csv = String::new();
+    pub fn write_csv(&self, writer: &mut impl std::io::Write) -> Result<(), Error> {
+        let mut writer = csv::Writer::from_writer(writer);
         for row in &self.rows {
-            let mut first = true;
+            let mut record = csv::StringRecord::new();
             for cell in row {
-                if first {
-                    first = false;
-                } else {
-                    csv.push(',');
-                }
                 if let Some(text) = &cell.text {
-                    csv.push_str(text);
+                    record.push_field(text);
                 }
             }
-            csv.push('\n');
+            writer
+                .write_record(&record)
+                .map_err(|_| Error::FailedToConvertToCSV)?;
         }
-        csv
+        writer.flush().map_err(|_| Error::FailedToConvertToCSV)?;
+        Ok(())
+    }
+
+    pub fn to_csv(&self) -> Result<String, Error> {
+        let mut buf = std::io::BufWriter::new(Vec::new());
+        self.write_csv(&mut buf)?;
+        let bytes = buf.into_inner().map_err(|_| Error::FailedToConvertToCSV)?;
+        String::from_utf8(bytes).map_err(|_| Error::FailedToConvertToCSV)
     }
 }
 
@@ -149,7 +155,7 @@ mod tests {
         "#;
         let result = extract_tables_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to_csv(), "1,2\n",);
+        assert_eq!(result[0].to_csv().unwrap(), "1,2\n",);
 
         // found 2 tables
         let html = r#"
@@ -172,8 +178,8 @@ mod tests {
         "#;
         let result = extract_tables_from_document(html).unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].to_csv(), "1,2\n",);
-        assert_eq!(result[1].to_csv(), "3,4\n",);
+        assert_eq!(result[0].to_csv().unwrap(), "1,2\n",);
+        assert_eq!(result[1].to_csv().unwrap(), "3,4\n",);
 
         // found 0 table
         let html = r#"
