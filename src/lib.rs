@@ -108,14 +108,14 @@ fn extract_table(node: &Node) -> Result<Table, Error> {
     };
     let tr_nodes = tr_nodes.document_order();
     for (i, tr) in tr_nodes.iter().enumerate() {
-        let td_nodes = match evaluate_xpath_node(*tr, "./td") {
+        let cell_nodes = match evaluate_xpath_node(*tr, "./td|./th") {
             Ok(Value::Nodeset(td_nodes)) => td_nodes,
             _ => return Err(Error::InvalidDocument),
         };
-        let td_nodes = td_nodes.document_order();
-        for (j, td) in td_nodes.iter().enumerate() {
+        let cell_nodes = cell_nodes.document_order();
+        for (j, cell_node) in cell_nodes.iter().enumerate() {
             let header = false;
-            table.set_cell(&td.string_value(), header, i, j);
+            table.set_cell(&cell_node.string_value(), header, i, j);
         }
     }
     Ok(table)
@@ -155,7 +155,7 @@ mod tests {
         "#;
         let result = extract_tables_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to_csv().unwrap(), "1,2\n",);
+        assert_eq!(result[0].to_csv().unwrap(), "1,2\n");
 
         // found 2 tables
         let html = r#"
@@ -199,5 +199,28 @@ mod tests {
         let html = r#""#;
         let result = extract_tables_from_document(html).unwrap();
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_td_and_th() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <th>1</th>
+                        <td>2</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>4</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_tables_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "1,2\n3,4\n");
     }
 }
