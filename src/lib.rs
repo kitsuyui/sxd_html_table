@@ -301,16 +301,45 @@ mod tests {
                         <td rowspan="2" colspan="2">A</td>
                         <td>B</td>
                     </tr>
-                    <tr>
-                        <td>C</td>
-                    </tr>
+                    <tr><td>C</td></tr>
+                </table>
+                <table>
+                    <tr><td>a</td><td>b</td><td>c</td></tr>
+                    <tr><td>d</td><td>e</td><td>f</td></tr>
+                </table>
+                <table>
+                    <tr><td>a</td><td>b</td><td>c</td><td rowspan="2">d</td></tr>
+                    <tr><td>e</td><td colspan="2">f</td></tr>
+                    <tr><td>i</td><td>j</td><td>k</td><td>l</td></tr>
+                </table>
+                <table>
+                    <tr><td>a</td><td>b</td><td rowspan="2">c</td><td>d</td></tr>
+                    <tr><td>e</td><td colspan="3">f</td></tr>
+                    <tr><td>i</td><td>j</td><td>k</td><td>l</td></tr>
+                </table>
+                <table>
+                    <tr><td>a</td><td>b</td><td>c</td><td>d</td></tr>
+                    <tr><td>e</td><td rowspan="2" colspan="2">f</td><td>g</td></tr>
+                    <tr><td>h</td><td>i</td></tr>
+                </table>
+
+                <!-- invalid rowspan -->
+                <table>
+                    <tr><td>a</td><td>b</td><td>c</td><td>d</td></tr>
+                    <tr><td>e</td><td rowspan="a" colspan="b">f</td><td>g</td></tr>
+                    <tr><td>h</td><td>i</td></tr>
                 </table>
             </body>
         </html>
         "#;
 
         let result = extract_tables_from_document(html).unwrap();
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 6);
         assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nA,A,C\n");
+        assert_eq!(result[1].to_csv().unwrap(), "a,b,c\nd,e,f\n");
+        assert_eq!(result[2].to_csv().unwrap(), "a,b,c,d\ne,f,f,d\ni,j,k,l\n");
+        assert_eq!(result[3].to_csv().unwrap(), "a,b,c,d\ne,f,f,f\ni,j,k,l\n");
+        assert_eq!(result[4].to_csv().unwrap(), "a,b,c,d\ne,f,f,g\nh,f,f,i\n");
+        assert_eq!(result[5].to_csv().unwrap(), "a,b,c,d\ne,f,g,\nh,i,,\n");
     }
 }
