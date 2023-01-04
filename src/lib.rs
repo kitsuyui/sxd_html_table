@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use sxd_xpath::{nodeset::Node, Context, Factory, Value};
 
 #[derive(Debug)]
@@ -8,61 +10,46 @@ pub enum Error {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct TableCell {
-    header: bool,
-    text: Option<String>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub struct Table {
-    rows: Vec<Vec<TableCell>>,
-}
-
-impl TableCell {
-    pub fn new(header: bool) -> Self {
-        Self { header, text: None }
-    }
-}
-
-impl Default for Table {
-    fn default() -> Self {
-        Self::new()
-    }
+    size: (usize, usize),
+    cells: Vec<Option<String>>,
+    headers: Vec<bool>,
 }
 
 impl Table {
-    pub fn new() -> Self {
-        Self { rows: vec![] }
+    pub fn new(size: (usize, usize)) -> Self {
+        Self {
+            size,
+            cells: vec![None; size.0 * size.1],
+            headers: vec![false; size.0 * size.1],
+        }
     }
 
-    pub fn expand_size(&mut self, row_size: usize, col_size: usize) {
-        if self.rows.len() < row_size {
-            self.rows.push(vec![]);
-        }
-        for row in &mut self.rows {
-            if row.len() < col_size {
-                row.push(TableCell::new(false));
+    pub fn is_header(&self, row: usize, col: usize) -> bool {
+        self.headers[row * self.size.1 + col]
+    }
+
+    pub fn rows(&self) -> Vec<Vec<Option<&str>>> {
+        let mut rows = vec![];
+        for i in 0..self.size.0 {
+            let mut row = vec![];
+            for j in 0..self.size.1 {
+                row.push(self.cells[i * self.size.1 + j].as_deref());
             }
+            rows.push(row);
         }
-    }
-
-    pub fn set_cell(&mut self, text: &str, header: bool, row_index: usize, col_index: usize) {
-        self.expand_size(row_index + 1, col_index + 1);
-        self.rows[row_index][col_index].text = Some(text.to_string());
-        self.rows[row_index][col_index].header = header;
-    }
-
-    pub fn rows(&self) -> &Vec<Vec<TableCell>> {
-        &self.rows
+        rows
     }
 
     pub fn write_csv(&self, writer: &mut impl std::io::Write) -> Result<(), Error> {
         let mut writer = csv::Writer::from_writer(writer);
-        for row in &self.rows {
+        for row in &self.rows() {
             let mut record = csv::StringRecord::new();
             for cell in row {
-                if let Some(text) = &cell.text {
+                if let Some(text) = cell {
                     record.push_field(text);
+                } else {
+                    record.push_field("");
                 }
             }
             writer
@@ -100,23 +87,62 @@ pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
     Ok(tables)
 }
 
+fn extract_rowspan_and_colspan(node: &Node) -> (usize, usize) {
+    #[allow(clippy::expect_used)]
+    let element = node.element().expect("Expected element");
+    let rowspan = element
+        .attribute_value("rowspan")
+        .unwrap_or("1")
+        .parse::<usize>()
+        .unwrap_or(1);
+    let colspan = element
+        .attribute_value("colspan")
+        .unwrap_or("1")
+        .parse::<usize>()
+        .unwrap_or(1);
+    (rowspan, colspan)
+}
+
 fn extract_table(node: &Node) -> Result<Table, Error> {
-    let mut table = Table::new();
     let tr_nodes = match evaluate_xpath_node(*node, "./tbody/tr") {
         Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
         _ => return Err(Error::InvalidDocument),
     };
     let tr_nodes = tr_nodes.document_order();
-    for (i, tr) in tr_nodes.iter().enumerate() {
+
+    let mut map: HashMap<(usize, usize), String> = HashMap::new();
+    let mut header_map: HashMap<(usize, usize), bool> = HashMap::new();
+    for (row_index, tr) in tr_nodes.iter().enumerate() {
         let cell_nodes = match evaluate_xpath_node(*tr, "./td|./th") {
             Ok(Value::Nodeset(td_nodes)) => td_nodes,
             _ => return Err(Error::InvalidDocument),
         };
         let cell_nodes = cell_nodes.document_order();
-        for (j, cell_node) in cell_nodes.iter().enumerate() {
-            let header = false;
-            table.set_cell(&cell_node.string_value(), header, i, j);
+        let mut col_index = 0;
+        for (_, cell_node) in cell_nodes.iter().enumerate() {
+            let (row_size, col_size) = extract_rowspan_and_colspan(cell_node);
+            let text = &cell_node.string_value();
+            #[allow(clippy::expect_used)]
+            let is_header = cell_node.element().expect("Expected element").name() == "th".into();
+            while map.contains_key(&(row_index, col_index)) {
+                col_index += 1;
+            }
+            for k in 0..row_size {
+                for l in 0..col_size {
+                    map.insert((row_index + k, col_index + l), text.to_string());
+                    header_map.insert((row_index + k, col_index + l), is_header);
+                }
+            }
         }
+    }
+    let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
+    let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
+    let mut table = Table::new((rows, cols));
+    for ((i, j), text) in map {
+        table.cells[i * table.size.1 + j] = Some(text);
+    }
+    for ((i, j), is_header) in header_map {
+        table.headers[i * table.size.1 + j] = is_header;
     }
     Ok(table)
 }
@@ -222,5 +248,69 @@ mod tests {
         let result = extract_tables_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "1,2\n3,4\n");
+    }
+
+    #[test]
+    fn test_rowspan_and_colspan() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td rowspan="2">A</td>
+                        <td>B</td>
+                    </tr>
+                    <tr>
+                        <td>C</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_tables_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "A,B\nA,C\n");
+
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td colspan="2">A</td>
+                        <td>B</td>
+                    </tr>
+                    <tr>
+                        <td>C</td>
+                        <td>D</td>
+                        <td>E</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_tables_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nC,D,E\n");
+
+        // more complex
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td rowspan="2" colspan="2">A</td>
+                        <td>B</td>
+                    </tr>
+                    <tr>
+                        <td>C</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+
+        let result = extract_tables_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nA,A,C\n");
     }
 }
