@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
 use sxd_xpath::{nodeset::Node, Context, Factory, Value};
+pub mod element_utils;
+pub mod table;
+use crate::table::Table;
 
 #[derive(Debug)]
 pub enum Error {
@@ -9,66 +12,7 @@ pub enum Error {
     FailedToConvertToCSV,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Table {
-    size: (usize, usize),
-    cells: Vec<Option<String>>,
-    headers: Vec<bool>,
-}
-
-impl Table {
-    pub fn new(size: (usize, usize)) -> Self {
-        Self {
-            size,
-            cells: vec![None; size.0 * size.1],
-            headers: vec![false; size.0 * size.1],
-        }
-    }
-
-    pub fn is_header(&self, row: usize, col: usize) -> bool {
-        self.headers[row * self.size.1 + col]
-    }
-
-    pub fn rows(&self) -> Vec<Vec<Option<&str>>> {
-        let mut rows = vec![];
-        for i in 0..self.size.0 {
-            let mut row = vec![];
-            for j in 0..self.size.1 {
-                row.push(self.cells[i * self.size.1 + j].as_deref());
-            }
-            rows.push(row);
-        }
-        rows
-    }
-
-    pub fn write_csv(&self, writer: &mut impl std::io::Write) -> Result<(), Error> {
-        let mut writer = csv::Writer::from_writer(writer);
-        for row in &self.rows() {
-            let mut record = csv::StringRecord::new();
-            for cell in row {
-                if let Some(text) = cell {
-                    record.push_field(text);
-                } else {
-                    record.push_field("");
-                }
-            }
-            writer
-                .write_record(&record)
-                .map_err(|_| Error::FailedToConvertToCSV)?;
-        }
-        writer.flush().map_err(|_| Error::FailedToConvertToCSV)?;
-        Ok(())
-    }
-
-    pub fn to_csv(&self) -> Result<String, Error> {
-        let mut buf = std::io::BufWriter::new(Vec::new());
-        self.write_csv(&mut buf)?;
-        let bytes = buf.into_inner().map_err(|_| Error::FailedToConvertToCSV)?;
-        String::from_utf8(bytes).map_err(|_| Error::FailedToConvertToCSV)
-    }
-}
-
-pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
+pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table>, Error> {
     let package = sxd_html::parse_html(html);
     let document = package.as_document();
     #[allow(clippy::expect_used)]
@@ -79,7 +23,7 @@ pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
     };
     let mut tables = vec![];
     for node in table_nodes.document_order() {
-        match extract_table(&node) {
+        match extract_table_texts(&node) {
             Ok(table) => tables.push(table),
             Err(e) => return Err(e),
         }
@@ -87,29 +31,31 @@ pub fn extract_tables_from_document(html: &str) -> Result<Vec<Table>, Error> {
     Ok(tables)
 }
 
-fn extract_rowspan_and_colspan(node: &Node) -> (usize, usize) {
+pub fn extract_table_elements_from_document(html: &str) -> Result<Vec<Table>, Error> {
+    let package = sxd_html::parse_html(html);
+    let document = package.as_document();
     #[allow(clippy::expect_used)]
-    let element = node.element().expect("Expected element");
-    let rowspan = element
-        .attribute_value("rowspan")
-        .unwrap_or("1")
-        .parse::<usize>()
-        .unwrap_or(1);
-    let colspan = element
-        .attribute_value("colspan")
-        .unwrap_or("1")
-        .parse::<usize>()
-        .unwrap_or(1);
-    (rowspan, colspan)
+    let val = evaluate_xpath_node(document.root(), "//table").expect("XPath evaluation failed");
+
+    let Value::Nodeset(table_nodes) = val else {
+        panic!("Expected node set");
+    };
+    let mut tables = vec![];
+    for node in table_nodes.document_order() {
+        match extract_table_elements(&node) {
+            Ok(table) => tables.push(table),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(tables)
 }
 
-fn extract_table(node: &Node) -> Result<Table, Error> {
+pub fn map_table_cell(node: &Node, f: fn(&Node) -> String) -> Result<Table, Error> {
     let tr_nodes = match evaluate_xpath_node(*node, "./tbody/tr") {
         Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
         _ => return Err(Error::InvalidDocument),
     };
     let tr_nodes = tr_nodes.document_order();
-
     let mut map: HashMap<(usize, usize), String> = HashMap::new();
     let mut header_map: HashMap<(usize, usize), bool> = HashMap::new();
     for (row_index, tr) in tr_nodes.iter().enumerate() {
@@ -120,10 +66,12 @@ fn extract_table(node: &Node) -> Result<Table, Error> {
         let cell_nodes = cell_nodes.document_order();
         let mut col_index = 0;
         for (_, cell_node) in cell_nodes.iter().enumerate() {
-            let (row_size, col_size) = extract_rowspan_and_colspan(cell_node);
-            let text = &cell_node.string_value();
             #[allow(clippy::expect_used)]
-            let is_header = cell_node.element().expect("Expected element").name() == "th".into();
+            let element = cell_node.element().expect("Expected element");
+            let (row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
+            let text = f(cell_node);
+            #[allow(clippy::expect_used)]
+            let is_header = element.name() == "th".into();
             while map.contains_key(&(row_index, col_index)) {
                 col_index += 1;
             }
@@ -135,16 +83,45 @@ fn extract_table(node: &Node) -> Result<Table, Error> {
             }
         }
     }
+    let mut table = map_to_table(&map);
+    for ((i, j), is_header) in header_map {
+        if is_header {
+            table.set_header(i, j);
+        }
+    }
+    Ok(table)
+}
+
+fn map_to_table(map: &HashMap<(usize, usize), String>) -> Table {
     let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
     let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
     let mut table = Table::new((rows, cols));
     for ((i, j), text) in map {
-        table.cells[i * table.size.1 + j] = Some(text);
+        table.set(*i, *j, text.to_string());
     }
-    for ((i, j), is_header) in header_map {
-        table.headers[i * table.size.1 + j] = is_header;
+    table
+}
+
+fn extract_table_texts(node: &Node) -> Result<Table, Error> {
+    map_table_cell(node, |node| node.string_value())
+}
+
+fn extract_table_elements(node: &Node) -> Result<Table, Error> {
+    map_table_cell(node, element_to_html)
+}
+
+fn element_to_html(node: &Node) -> String {
+    let mut buf = Vec::new();
+    let package = sxd_document::Package::new();
+    let doc = package.as_document();
+    let root = doc.root();
+    if let Some(element) = node.element() {
+        root.append_child(element);
     }
-    Ok(table)
+    #[allow(clippy::expect_used)]
+    sxd_document::writer::format_document(&doc, &mut buf).expect("Failed to format document");
+    #[allow(clippy::expect_used)]
+    String::from_utf8(buf).expect("Failed to convert to UTF-8")
 }
 
 fn evaluate_xpath_node<'d>(
@@ -179,7 +156,7 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "1,2\n");
 
@@ -202,7 +179,7 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].to_csv().unwrap(), "1,2\n",);
         assert_eq!(result[1].to_csv().unwrap(), "3,4\n",);
@@ -218,12 +195,12 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 0);
 
         // empty html
         let html = r#""#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 0);
     }
 
@@ -245,7 +222,7 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "1,2\n3,4\n");
     }
@@ -267,7 +244,7 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "A,B\nA,C\n");
 
@@ -288,7 +265,7 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nC,D,E\n");
 
@@ -333,7 +310,7 @@ mod tests {
         </html>
         "#;
 
-        let result = extract_tables_from_document(html).unwrap();
+        let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 6);
         assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nA,A,C\n");
         assert_eq!(result[1].to_csv().unwrap(), "a,b,c\nd,e,f\n");
