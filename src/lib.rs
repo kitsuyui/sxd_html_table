@@ -1,7 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
+use node_utils::map_table_cell;
 use sxd_xpath::{nodeset::Node, Context, Factory, Value};
 pub mod element_utils;
+pub mod node_utils;
 pub mod table;
 use crate::table::Table;
 
@@ -12,7 +14,7 @@ pub enum Error {
     FailedToConvertToCSV,
 }
 
-pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table>, Error> {
+pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
     let package = sxd_html::parse_html(html);
     let document = package.as_document();
     #[allow(clippy::expect_used)]
@@ -23,7 +25,7 @@ pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table>, Error
     };
     let mut tables = vec![];
     for node in table_nodes.document_order() {
-        match extract_table_texts(&node) {
+        match extract_table_texts(node) {
             Ok(table) => tables.push(table),
             Err(e) => return Err(e),
         }
@@ -31,75 +33,27 @@ pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table>, Error
     Ok(tables)
 }
 
-pub fn extract_table_elements_from_document(html: &str) -> Result<Vec<Table>, Error> {
-    let package = sxd_html::parse_html(html);
-    let document = package.as_document();
-    #[allow(clippy::expect_used)]
-    let val = evaluate_xpath_node(document.root(), "//table").expect("XPath evaluation failed");
-
-    let Value::Nodeset(table_nodes) = val else {
-        panic!("Expected node set");
-    };
-    let mut tables = vec![];
-    for node in table_nodes.document_order() {
-        match extract_table_elements(&node) {
-            Ok(table) => tables.push(table),
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(tables)
-}
-
-pub fn map_table_cell<T, F>(node: &Node, mut f: F) -> Result<(), Error>
+pub fn map_table_cell_obsoleted<T, F>(node: Node, mut f: F) -> Result<Table<T>, Error>
 where
-    F: FnMut(&Node, usize, usize) -> T,
+    T: Clone + std::fmt::Debug,
+    F: FnMut(Node) -> T,
 {
-    let tr_nodes = match evaluate_xpath_node(*node, "./tbody/tr") {
-        Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
-        _ => return Err(Error::InvalidDocument),
-    };
-    let tr_nodes = tr_nodes.document_order();
-    let mut set: HashSet<(usize, usize)> = HashSet::new();
-    for (row_index, tr) in tr_nodes.iter().enumerate() {
-        let cell_nodes = match evaluate_xpath_node(*tr, "./td|./th") {
-            Ok(Value::Nodeset(td_nodes)) => td_nodes,
-            _ => return Err(Error::InvalidDocument),
-        };
-        let cell_nodes = cell_nodes.document_order();
-        let mut col_index = 0;
-        for (_, cell_node) in cell_nodes.iter().enumerate() {
-            #[allow(clippy::expect_used)]
-            let element = cell_node.element().expect("Expected element");
-            let (row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
-            while set.contains(&(row_index, col_index)) {
-                col_index += 1;
-            }
-            for k in 0..row_size {
-                for l in 0..col_size {
-                    let row = row_index + k;
-                    let col = col_index + l;
-                    set.insert((row, col));
-                    f(cell_node, row, col);
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn map_table_cell_obsoleted(node: &Node, f: fn(&Node) -> String) -> Result<Table, Error> {
-    let mut map: HashMap<(usize, usize), (String, bool)> = HashMap::new();
+    let mut map: HashMap<(usize, usize), T> = HashMap::new();
+    let mut header_map: HashMap<(usize, usize), bool> = HashMap::new();
     map_table_cell(node, |cell_node: &Node, i: usize, j: usize| {
         #[allow(clippy::expect_used)]
         let element = cell_node.element().expect("Expected element");
         let is_header = element.name() == "th".into();
-        map.insert((i, j), (f(cell_node), is_header));
+        map.insert((i, j), f(*cell_node));
+        header_map.insert((i, j), is_header);
     })?;
     let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
     let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
     let mut table = Table::new((rows, cols));
-    for ((i, j), (text, is_header)) in map {
-        table.set(i, j, text);
+    for ((i, j), item) in map {
+        table.set(i, j, item);
+    }
+    for ((i, j), is_header) in header_map {
         if is_header {
             table.set_header(i, j);
         }
@@ -107,26 +61,8 @@ fn map_table_cell_obsoleted(node: &Node, f: fn(&Node) -> String) -> Result<Table
     Ok(table)
 }
 
-fn extract_table_texts(node: &Node) -> Result<Table, Error> {
+fn extract_table_texts(node: Node) -> Result<Table<String>, Error> {
     map_table_cell_obsoleted(node, |node| node.string_value())
-}
-
-fn extract_table_elements(node: &Node) -> Result<Table, Error> {
-    map_table_cell_obsoleted(node, element_to_html)
-}
-
-fn element_to_html(node: &Node) -> String {
-    let mut buf = Vec::new();
-    let package = sxd_document::Package::new();
-    let doc = package.as_document();
-    let root = doc.root();
-    if let Some(element) = node.element() {
-        root.append_child(element);
-    }
-    #[allow(clippy::expect_used)]
-    sxd_document::writer::format_document(&doc, &mut buf).expect("Failed to format document");
-    #[allow(clippy::expect_used)]
-    String::from_utf8(buf).expect("Failed to convert to UTF-8")
 }
 
 fn evaluate_xpath_node<'d>(
