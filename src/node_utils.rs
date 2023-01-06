@@ -32,8 +32,9 @@ where
     for (row_index, tr_node) in t.tr_nodes()?.iter().enumerate() {
         for td_node in t.td_nodes(tr_node)? {
             let mut col_index = 0;
-            #[allow(clippy::expect_used)]
-            let element = td_node.element().expect("Expected element");
+            let Some(element) = td_node.element() else {
+                return Err(Error::InvalidDocument);
+            };
             let (row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
             while set.contains(&(row_index, col_index)) {
                 col_index += 1;

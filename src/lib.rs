@@ -12,16 +12,17 @@ pub enum Error {
     TableNotFound,
     InvalidDocument,
     FailedToConvertToCSV,
+    XPathEvaluationError(sxd_xpath::Error),
 }
 
 pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
     let package = sxd_html::parse_html(html);
     let document = package.as_document();
-    #[allow(clippy::expect_used)]
-    let val = evaluate_xpath_node(document.root(), "//table").expect("XPath evaluation failed");
+    let val =
+        evaluate_xpath_node(document.root(), "//table").map_err(Error::XPathEvaluationError)?;
 
     let Value::Nodeset(table_nodes) = val else {
-        panic!("Expected node set");
+        return Err(Error::TableNotFound);
     };
     let mut tables = vec![];
     for node in table_nodes.document_order() {
@@ -41,11 +42,13 @@ where
     let mut map: HashMap<(usize, usize), T> = HashMap::new();
     let mut header_map: HashMap<(usize, usize), bool> = HashMap::new();
     map_table_cell(node, |cell_node: &Node, i: usize, j: usize| {
-        #[allow(clippy::expect_used)]
-        let element = cell_node.element().expect("Expected element");
+        let Some(element) = cell_node.element() else {
+            return Err(Error::InvalidDocument);
+        };
         let is_header = element.name() == "th".into();
         map.insert((i, j), f(*cell_node));
         header_map.insert((i, j), is_header);
+        Ok(())
     })?;
     let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
     let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
