@@ -1,22 +1,15 @@
+use sxd_xpath::nodeset::Node;
+
 use crate::Error;
 
 pub struct Table<T> {
     size: (usize, usize),
     cells: Vec<Option<T>>,
-    headers: Vec<bool>,
 }
 
 impl<T> Table<T> {
     pub fn set(&mut self, row: usize, col: usize, item: T) {
         self.cells[row * self.size.1 + col] = Some(item);
-    }
-
-    pub fn set_header(&mut self, row: usize, col: usize) {
-        self.headers[row * self.size.1 + col] = true;
-    }
-
-    pub fn is_header(&self, row: usize, col: usize) -> bool {
-        self.headers[row * self.size.1 + col]
     }
 
     pub fn rows(&self) -> Vec<Vec<Option<&T>>> {
@@ -40,11 +33,10 @@ where
         Self {
             size,
             cells: vec![None; size.0 * size.1],
-            headers: vec![false; size.0 * size.1],
         }
     }
 
-    pub fn map<T2>(&self, f: impl Fn(&T) -> T2) -> Table<T2>
+    pub fn map<T2>(&self, f: impl Fn(usize, usize, &T) -> T2) -> Table<T2>
     where
         T2: Clone,
     {
@@ -54,18 +46,34 @@ where
 
 fn map_table<S, T, F>(table: &Table<T>, f: F) -> Table<S>
 where
-    F: Fn(&T) -> S,
+    F: Fn(usize, usize, &T) -> S,
     S: Clone,
 {
     let mut new_table = Table::new(table.size);
     for i in 0..table.size.0 {
         for j in 0..table.size.1 {
             if let Some(item) = &table.cells[i * table.size.1 + j] {
-                new_table.set(i, j, f(item));
+                new_table.set(i, j, f(i, j, item));
             }
         }
     }
     new_table
+}
+
+impl Table<Node<'_>> {
+    pub fn to_string_table(&self) -> Table<String> {
+        self.map(|_, _, node| node.string_value())
+    }
+
+    pub fn to_string_table_with_header(&self) -> Table<(String, bool)> {
+        self.map(|_, _, node| {
+            let Some(element) = node.element() else {
+                return (node.string_value(), false);
+            };
+            let is_header = element.name() == "th".into();
+            (node.string_value(), is_header)
+        })
+    }
 }
 
 impl<T> Table<T>

@@ -1,11 +1,8 @@
-use std::collections::HashMap;
-
-use node_utils::map_table_cell;
-use sxd_xpath::{nodeset::Node, Context, Factory, Value};
 pub mod element_utils;
 pub mod node_utils;
 pub mod table;
-use crate::table::Table;
+pub use crate::node_utils::extract_table_nodes_to_table;
+pub use crate::table::Table;
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,75 +12,20 @@ pub enum Error {
     XPathEvaluationError(sxd_xpath::Error),
 }
 
-pub fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
-    let package = sxd_html::parse_html(html);
-    let document = package.as_document();
-    let val =
-        evaluate_xpath_node(document.root(), "//table").map_err(Error::XPathEvaluationError)?;
-
-    let Value::Nodeset(table_nodes) = val else {
-        return Err(Error::TableNotFound);
-    };
-    let mut tables = vec![];
-    for node in table_nodes.document_order() {
-        match extract_table_texts(node) {
-            Ok(table) => tables.push(table),
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(tables)
-}
-
-pub fn map_table_cell_obsoleted<T, F>(node: Node, mut f: F) -> Result<Table<T>, Error>
-where
-    T: Clone + std::fmt::Debug,
-    F: FnMut(Node) -> T,
-{
-    let mut map: HashMap<(usize, usize), T> = HashMap::new();
-    let mut header_map: HashMap<(usize, usize), bool> = HashMap::new();
-    map_table_cell(node, |cell_node: &Node, i: usize, j: usize| {
-        let Some(element) = cell_node.element() else {
-            return Err(Error::InvalidDocument);
-        };
-        let is_header = element.name() == "th".into();
-        map.insert((i, j), f(*cell_node));
-        header_map.insert((i, j), is_header);
-        Ok(())
-    })?;
-    let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
-    let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
-    let mut table = Table::new((rows, cols));
-    for ((i, j), item) in map {
-        table.set(i, j, item);
-    }
-    for ((i, j), is_header) in header_map {
-        if is_header {
-            table.set_header(i, j);
-        }
-    }
-    Ok(table)
-}
-
-fn extract_table_texts(node: Node) -> Result<Table<String>, Error> {
-    map_table_cell_obsoleted(node, |node| node.string_value())
-}
-
-fn evaluate_xpath_node<'d>(
-    node: impl Into<Node<'d>>,
-    expr: &str,
-) -> Result<Value<'d>, sxd_xpath::Error> {
-    let factory = Factory::new();
-    let expression = factory.build(expr)?;
-    let expression = expression.ok_or(sxd_xpath::Error::NoXPath)?;
-    let context = Context::new();
-    expression
-        .evaluate(&context, node.into())
-        .map_err(Into::into)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
+        let package = sxd_html::parse_html(html);
+        let document = package.as_document();
+        let tables = extract_table_nodes_to_table(document.root())?;
+        let tables = tables
+            .into_iter()
+            .map(|table| table.to_string_table())
+            .collect();
+        Ok(tables)
+    }
 
     #[test]
     fn test_find_table_from_document() {
@@ -169,6 +111,69 @@ mod tests {
         let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "1,2\n3,4\n");
+    }
+
+    #[test]
+    fn test_table_item_xpath() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <th class="aaa">1</th>
+                        <td><a href="https:://example.com/">Hello, World!</a></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div>
+                                <p>3</p>
+                                <p>4</p>
+                            </div>
+                        </td>
+                        <td>4</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let package = sxd_html::parse_html(html);
+        let document = package.as_document();
+        let tables = extract_table_nodes_to_table(document.root()).unwrap();
+        assert_eq!(tables.len(), 1);
+        let csv1 = tables[0]
+            .map(|_, _, node| match node.element() {
+                Some(element) => {
+                    if let Some(cls) = element.attribute_value("class") {
+                        return cls;
+                    }
+                    "empty"
+                }
+                None => "empty",
+            })
+            .to_csv();
+        assert_eq!(csv1.unwrap(), "aaa,empty\nempty,empty\n");
+
+        let csv2 = tables[0]
+            .map(|_, _, node| {
+                for node in node.children().iter() {
+                    if let Some(element) = node.element() {
+                        if let Some(href) = element.attribute_value("href") {
+                            return href.to_string();
+                        }
+                    }
+                }
+                "empty".to_string()
+            })
+            .to_csv();
+        assert_eq!(csv2.unwrap(), "empty,https:://example.com/\nempty,empty\n");
+
+        let csv3 = tables[0]
+            .map(|_, _, node| node.string_value().trim().to_string())
+            .to_csv();
+        assert_eq!(
+            csv3.unwrap(),
+            "1,\"Hello, World!\"\n\"3\n                                4\",4\n"
+        );
     }
 
     #[test]
