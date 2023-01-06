@@ -1,6 +1,4 @@
-# WIP: sxd_html_table
-
-!!! This library is still under development !!!
+# sxd_html_table
 
 # Provide features related to HTML tables
 
@@ -11,6 +9,40 @@ There are some complexities to deal with when dealing with HTML tables.
 
 This library hides these complexities and makes it easy to deal with the structure of the table.
 For example, you can convert an HTML table tag to a CSV file.
+
+## Usage
+
+```rust
+use sxd_html_table::Table;
+
+let html = r#"
+<table>
+  <tr>
+    <th>header1</th>
+    <th>header2</th>
+  </tr>
+  <tr>
+    <td>data1</td>
+    <td>data2</td>
+  </tr>
+</table>
+"#;
+
+fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
+    let package = sxd_html::parse_html(html);
+    let document = package.as_document();
+    let tables = extract_table_nodes_to_table(document.root())?;
+    let tables = tables
+        .into_iter()
+        .map(|table| table.to_string_table())
+        .collect();
+    Ok(tables)
+}
+
+let table = extract_table_texts_from_document(html).unwrap();
+let csv = table.to_csv().unwrap();
+assert_eq!(csv, "header1,header2\ndata1,data2\n");
+```
 
 ## License
 
