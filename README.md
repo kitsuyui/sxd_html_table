@@ -1,5 +1,10 @@
 # sxd_html_table
 
+[![crates.io](https://img.shields.io/crates/d/sxd_html_table)](https://crates.io/crates/sxd_html_table)
+[![tests](https://github.com/kitsuyui/sxd_html_table/actions/workflows/test.yml/badge.svg)](https://github.com/kitsuyui/sxd_html_table/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/kitsuyui/sxd_html_table/branch/main/graph/badge.svg?token=CG4FPNVJI3)](https://codecov.io/gh/kitsuyui/sxd_html_table)
+[![license](https://img.shields.io/crates/l/sxd_html_table)](https://github.com/kitsuyui/sxd_html_table#license)
+
 # Provide features related to HTML tables
 
 There are some complexities to deal with when dealing with HTML tables.
