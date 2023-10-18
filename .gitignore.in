@@ -1,0 +1,5 @@
+gibo dump Linux
+gibo dump Windows
+gibo dump macOS
+gibo dump Rust
+echo /Cargo.lock
