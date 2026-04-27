@@ -57,13 +57,17 @@ pub fn extract_table_nodes_to_table<'a>(
 fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error> {
     let mut map: HashMap<(usize, usize), Node> = HashMap::new();
     let t = TableSupport(node.into());
-    for (row_index, tr_node) in t.tr_nodes()?.iter().enumerate() {
+    let tr_nodes = t.tr_nodes()?;
+    for (row_index, tr_node) in tr_nodes.iter().enumerate() {
         for td_node in t.td_nodes(*tr_node)? {
             let mut col_index = 0;
             let Some(element) = td_node.element() else {
                 return Err(Error::InvalidDocument);
             };
-            let (row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
+            let (mut row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
+            if row_size == 0 {
+                row_size = tr_nodes.len() - row_index;
+            }
             while map.contains_key(&(row_index, col_index)) {
                 col_index += 1;
             }
