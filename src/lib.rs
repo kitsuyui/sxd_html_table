@@ -81,13 +81,13 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
 
         // empty html
         let html = r#""#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
     }
 
     #[test]
