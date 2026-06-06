@@ -9,12 +9,47 @@ pub enum Error {
     TableNotFound,
     InvalidDocument,
     FailedToConvertToCSV,
-    XPathEvaluationError(sxd_xpath::Error),
+    XPathEvaluationError(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TableNotFound => f.write_str("table not found"),
+            Self::InvalidDocument => f.write_str("invalid document"),
+            Self::FailedToConvertToCSV => f.write_str("failed to convert table to CSV"),
+            Self::XPathEvaluationError(err)
+                if matches!(
+                    err.downcast_ref::<sxd_xpath::Error>(),
+                    Some(sxd_xpath::Error::NoXPath)
+                ) =>
+            {
+                f.write_str("failed to evaluate XPath: XPath was empty")
+            }
+            Self::XPathEvaluationError(err) => write!(f, "failed to evaluate XPath: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::XPathEvaluationError(err) => Some(err.as_ref()),
+            Self::TableNotFound | Self::InvalidDocument | Self::FailedToConvertToCSV => None,
+        }
+    }
+}
+
+impl From<sxd_xpath::Error> for Error {
+    fn from(err: sxd_xpath::Error) -> Self {
+        Self::XPathEvaluationError(Box::new(err))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error as StdError;
 
     fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, Error> {
         let package = sxd_html::parse_html(html);
@@ -275,5 +310,46 @@ mod tests {
         assert_eq!(result[4].to_csv().unwrap(), "a,b,c,d\ne,f,f,g\nh,f,f,i\n");
         assert_eq!(result[5].to_csv().unwrap(), "a,b,c,d\ne,f,g,\nh,i,,\n");
         assert_eq!(result[6].to_csv().unwrap(), "a,b\na,c\na,d\n");
+    }
+
+    #[test]
+    fn error_implements_std_error() {
+        fn assert_std_error<E: StdError>() {}
+
+        assert_std_error::<Error>();
+    }
+
+    #[test]
+    fn error_displays_stable_messages() {
+        assert_eq!(Error::TableNotFound.to_string(), "table not found");
+        assert_eq!(Error::InvalidDocument.to_string(), "invalid document");
+        assert_eq!(
+            Error::FailedToConvertToCSV.to_string(),
+            "failed to convert table to CSV"
+        );
+        assert_eq!(
+            Error::from(sxd_xpath::Error::NoXPath).to_string(),
+            "failed to evaluate XPath: XPath was empty"
+        );
+    }
+
+    #[test]
+    fn xpath_error_is_exposed_as_source() {
+        let err = Error::from(sxd_xpath::Error::NoXPath);
+
+        assert_eq!(err.source().unwrap().to_string(), "NoXPath");
+    }
+
+    #[test]
+    fn error_converts_to_boxed_error_with_question_mark() {
+        fn use_question_mark() -> Result<(), Box<dyn StdError>> {
+            Err(Error::InvalidDocument)?;
+            Ok(())
+        }
+
+        assert_eq!(
+            use_question_mark().unwrap_err().to_string(),
+            "invalid document"
+        );
     }
 }
