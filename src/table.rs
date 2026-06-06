@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use sxd_xpath::nodeset::Node;
-
 use crate::Error;
 
 fn sanitize_formula_injection(s: &str) -> Cow<'_, str> {
@@ -91,22 +89,6 @@ where
         }
     }
     new_table
-}
-
-impl Table<Node<'_>> {
-    pub fn to_string_table(&self) -> Table<String> {
-        self.map(|_, _, node| node.string_value())
-    }
-
-    pub fn to_string_table_with_header(&self) -> Table<(String, bool)> {
-        self.map(|_, _, node| {
-            let Some(element) = node.element() else {
-                return (node.string_value(), false);
-            };
-            let is_header = element.name() == "th".into();
-            (node.string_value(), is_header)
-        })
-    }
 }
 
 impl<T> Table<T>
