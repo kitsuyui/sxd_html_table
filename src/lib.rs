@@ -303,4 +303,25 @@ mod tests {
             "failed to convert table to CSV"
         );
     }
+
+    #[test]
+    fn test_oversized_spans_are_capped() {
+        // colspan="99999" must be capped at HTML5 max (1000) to prevent OOM
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td colspan="99999">a</td></tr>
+                    <tr><td>b</td><td>c</td></tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        let rows = result[0].rows();
+        // The table must have exactly 2 rows and at most 1000 columns, not 99999
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].len() <= 1000);
+    }
 }
