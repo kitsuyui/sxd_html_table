@@ -5,6 +5,7 @@ pub use crate::node_utils::extract_table_nodes_to_table;
 pub use crate::table::Table;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     TableNotFound,
     InvalidDocument,
