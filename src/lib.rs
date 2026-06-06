@@ -251,6 +251,35 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_table_excluded() {
+        // A nested <table> is not returned as a separate entry.
+        // Only the outermost table is returned; the inner table is accessible
+        // as a node within the outer table's cells.
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td>outer</td>
+                        <td>
+                            <table>
+                                <tr><td>inner</td></tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(
+            result.len(),
+            1,
+            "nested table must not appear as a separate entry"
+        );
+    }
+
+    #[test]
     fn test_rowspan_and_colspan() {
         let html = r#"
         <html>
