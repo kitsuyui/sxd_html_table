@@ -10,14 +10,22 @@ impl<'a> TableSupport<'a> {
     fn tr_nodes(&self) -> Result<Vec<Node<'a>>, Error> {
         let tr_nodes = match evaluate_xpath_node(self.0, "./tbody/tr") {
             Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
-            _ => return Err(Error::InvalidDocument),
+            _ => {
+                return Err(Error::InvalidDocument(
+                    "XPath ./tbody/tr did not return a nodeset",
+                ))
+            }
         };
         Ok(tr_nodes.document_order())
     }
     fn td_nodes(&self, tr: Node<'a>) -> Result<Vec<Node<'a>>, Error> {
         let td_nodes = match evaluate_xpath_node(tr, "./td|./th") {
             Ok(Value::Nodeset(td_nodes)) => td_nodes,
-            _ => return Err(Error::InvalidDocument),
+            _ => {
+                return Err(Error::InvalidDocument(
+                    "XPath ./td|./th did not return a nodeset",
+                ))
+            }
         };
         Ok(td_nodes.document_order())
     }
@@ -62,7 +70,9 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
         for td_node in t.td_nodes(*tr_node)? {
             let mut col_index = 0;
             let Some(element) = td_node.element() else {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "td/th node could not be cast to an element",
+                ));
             };
             let (mut row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
             if row_size == 0 {
