@@ -499,4 +499,25 @@ mod tests {
         assert_eq!(rows[1][0], Some(&("Alice".to_string(), false)));
         assert_eq!(rows[1][1], Some(&("100".to_string(), false)));
     }
+
+    #[test]
+    fn test_rowspan_exceeds_actual_rows() {
+        // rowspan larger than the actual row count must be clamped to the remaining rows
+        // per HTML5 §4.9.11, not produce phantom rows
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td rowspan="99999">a</td><td>b</td></tr>
+                    <tr><td>c</td></tr>
+                    <tr><td>d</td></tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        // table has exactly 3 rows, not 99999
+        assert_eq!(result[0].to_csv().unwrap(), "a,b\na,c\na,d\n");
+    }
 }
