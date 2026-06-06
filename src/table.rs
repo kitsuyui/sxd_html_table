@@ -8,7 +8,10 @@ pub struct Table<T> {
 }
 
 impl<T> Table<T> {
-    /// Sets the item at the specified row and column.
+    /// Sets the cell at the given `(row, col)` position.
+    ///
+    /// Rows are zero-indexed from top; columns are zero-indexed from left.
+    /// The row index must come before the column index.
     ///
     /// # Panics
     ///
@@ -45,6 +48,10 @@ impl<T> Table<T>
 where
     T: Clone,
 {
+    /// Creates a new table with the given size.
+    ///
+    /// `size` is `(rows, cols)`: the first element is the row count and the
+    /// second is the column count.
     pub fn new(size: (usize, usize)) -> Self {
         Self {
             size,
