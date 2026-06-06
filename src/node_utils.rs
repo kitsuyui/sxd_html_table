@@ -4,6 +4,8 @@ use sxd_xpath::{nodeset::Node, Context, Factory, Value};
 
 use crate::{element_utils, table::Table, Error};
 
+pub(crate) const MAX_TABLE_COLUMNS: usize = 1000;
+
 struct TableSupport<'a>(Node<'a>);
 
 impl<'a> TableSupport<'a> {
@@ -68,8 +70,20 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
             if row_size == 0 {
                 row_size = tr_nodes.len() - row_index;
             }
-            while map.contains_key(&(row_index, col_index)) {
+            while col_index < MAX_TABLE_COLUMNS && map.contains_key(&(row_index, col_index)) {
                 col_index += 1;
+            }
+            if col_index >= MAX_TABLE_COLUMNS {
+                return Err(Error::InvalidDocument);
+            }
+            if col_size > MAX_TABLE_COLUMNS {
+                return Err(Error::InvalidDocument);
+            }
+            let Some(end_col) = col_index.checked_add(col_size) else {
+                return Err(Error::InvalidDocument);
+            };
+            if end_col > MAX_TABLE_COLUMNS {
+                return Err(Error::InvalidDocument);
             }
             for k in 0..row_size {
                 for l in 0..col_size {
