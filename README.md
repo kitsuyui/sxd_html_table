@@ -18,7 +18,7 @@ For example, you can convert an HTML table tag to a CSV file.
 ## Usage
 
 ```rust
-use sxd_html_table::Table;
+use sxd_html_table::{extract_table_nodes_to_table, Error, Table};
 
 let html = r#"
 <table>
@@ -44,7 +44,8 @@ fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, E
     Ok(tables)
 }
 
-let table = extract_table_texts_from_document(html).unwrap();
+let tables = extract_table_texts_from_document(html).unwrap();
+let table = tables.first().unwrap();
 let csv = table.to_csv().unwrap();
 assert_eq!(csv, "header1,header2\ndata1,data2\n");
 ```
