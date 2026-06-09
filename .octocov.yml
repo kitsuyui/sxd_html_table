@@ -2,6 +2,7 @@
 coverage:
   paths:
     - coverage.lcov
+  acceptable: current >= 80%
 testExecutionTime:
   if: true
 diff:
