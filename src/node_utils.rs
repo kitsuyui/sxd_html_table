@@ -12,14 +12,22 @@ impl<'a> TableSupport<'a> {
     fn tr_nodes(&self) -> Result<Vec<Node<'a>>, Error> {
         let tr_nodes = match evaluate_xpath_node(self.0, "./tbody/tr") {
             Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
-            _ => return Err(Error::InvalidDocument),
+            _ => {
+                return Err(Error::InvalidDocument(
+                    "XPath ./tbody/tr did not return a nodeset",
+                ))
+            }
         };
         Ok(tr_nodes.document_order())
     }
     fn td_nodes(&self, tr: Node<'a>) -> Result<Vec<Node<'a>>, Error> {
         let td_nodes = match evaluate_xpath_node(tr, "./td|./th") {
             Ok(Value::Nodeset(td_nodes)) => td_nodes,
-            _ => return Err(Error::InvalidDocument),
+            _ => {
+                return Err(Error::InvalidDocument(
+                    "XPath ./td|./th did not return a nodeset",
+                ))
+            }
         };
         Ok(td_nodes.document_order())
     }
@@ -41,9 +49,13 @@ pub fn evaluate_xpath_node<'a>(
 fn extract_table_nodes<'a>(node: impl Into<Node<'a>>) -> Result<Vec<Node<'a>>, Error> {
     let val = evaluate_xpath_node(node, "//table").map_err(Error::XPathEvaluationError)?;
     let Value::Nodeset(table_nodes) = val else {
-        return Err(Error::TableNotFound);
+        unreachable!("//table XPath always returns a Nodeset");
     };
-    Ok(table_nodes.document_order())
+    let nodes = table_nodes.document_order();
+    if nodes.is_empty() {
+        return Err(Error::TableNotFound);
+    }
+    Ok(nodes)
 }
 
 pub fn extract_table_nodes_to_table<'a>(
@@ -64,7 +76,9 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
         for td_node in t.td_nodes(*tr_node)? {
             let mut col_index = 0;
             let Some(element) = td_node.element() else {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "td/th node could not be cast to an element",
+                ));
             };
             let (mut row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
             if row_size == 0 {
@@ -74,16 +88,24 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
                 col_index += 1;
             }
             if col_index >= MAX_TABLE_COLUMNS {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "table row exceeds the maximum number of columns",
+                ));
             }
             if col_size > MAX_TABLE_COLUMNS {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "colspan exceeds the maximum number of columns",
+                ));
             }
             let Some(end_col) = col_index.checked_add(col_size) else {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "column index overflowed while placing a cell",
+                ));
             };
             if end_col > MAX_TABLE_COLUMNS {
-                return Err(Error::InvalidDocument);
+                return Err(Error::InvalidDocument(
+                    "cell placement exceeds the maximum number of columns",
+                ));
             }
             for k in 0..row_size {
                 for l in 0..col_size {

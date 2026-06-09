@@ -5,11 +5,23 @@ pub use crate::node_utils::extract_table_nodes_to_table;
 pub use crate::table::Table;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     TableNotFound,
-    InvalidDocument,
+    InvalidDocument(&'static str),
     FailedToConvertToCSV,
     XPathEvaluationError(sxd_xpath::Error),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TableNotFound => f.write_str("no table found in document"),
+            Self::InvalidDocument(ctx) => write!(f, "invalid document: {ctx}"),
+            Self::FailedToConvertToCSV => f.write_str("failed to convert table to CSV"),
+            Self::XPathEvaluationError(e) => write!(f, "XPath evaluation error: {e}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -81,13 +93,13 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
 
         // empty html
         let html = r#""#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
     }
 
     #[test]
@@ -293,7 +305,7 @@ mod tests {
             crate::node_utils::MAX_TABLE_COLUMNS
         );
         match extract_table_texts_from_document(&html) {
-            Err(Error::InvalidDocument) => {}
+            Err(Error::InvalidDocument(_)) => {}
             Err(_) => panic!("expected InvalidDocument"),
             Ok(_) => panic!("expected table extraction to fail"),
         }
@@ -314,9 +326,25 @@ mod tests {
             crate::node_utils::MAX_TABLE_COLUMNS + 1
         );
         match extract_table_texts_from_document(&html) {
-            Err(Error::InvalidDocument) => {}
+            Err(Error::InvalidDocument(_)) => {}
             Err(_) => panic!("expected InvalidDocument"),
             Ok(_) => panic!("expected table extraction to fail"),
         }
+    }
+
+    #[test]
+    fn test_error_display() {
+        assert_eq!(
+            Error::TableNotFound.to_string(),
+            "no table found in document"
+        );
+        assert_eq!(
+            Error::InvalidDocument("XPath ./tbody/tr did not return a nodeset").to_string(),
+            "invalid document: XPath ./tbody/tr did not return a nodeset"
+        );
+        assert_eq!(
+            Error::FailedToConvertToCSV.to_string(),
+            "failed to convert table to CSV"
+        );
     }
 }
