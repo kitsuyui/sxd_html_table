@@ -7,9 +7,20 @@ pub use crate::table::Table;
 #[derive(Debug)]
 pub enum Error {
     TableNotFound,
-    InvalidDocument,
+    InvalidDocument(&'static str),
     FailedToConvertToCSV,
     XPathEvaluationError(sxd_xpath::Error),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TableNotFound => f.write_str("no table found in document"),
+            Self::InvalidDocument(ctx) => write!(f, "invalid document: {ctx}"),
+            Self::FailedToConvertToCSV => f.write_str("failed to convert table to CSV"),
+            Self::XPathEvaluationError(e) => write!(f, "XPath evaluation error: {e}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -275,5 +286,21 @@ mod tests {
         assert_eq!(result[4].to_csv().unwrap(), "a,b,c,d\ne,f,f,g\nh,f,f,i\n");
         assert_eq!(result[5].to_csv().unwrap(), "a,b,c,d\ne,f,g,\nh,i,,\n");
         assert_eq!(result[6].to_csv().unwrap(), "a,b\na,c\na,d\n");
+    }
+
+    #[test]
+    fn test_error_display() {
+        assert_eq!(
+            Error::TableNotFound.to_string(),
+            "no table found in document"
+        );
+        assert_eq!(
+            Error::InvalidDocument("XPath ./tbody/tr did not return a nodeset").to_string(),
+            "invalid document: XPath ./tbody/tr did not return a nodeset"
+        );
+        assert_eq!(
+            Error::FailedToConvertToCSV.to_string(),
+            "failed to convert table to CSV"
+        );
     }
 }
