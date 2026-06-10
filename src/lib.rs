@@ -268,6 +268,26 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nC,D,E\n");
 
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td colspan="0">A</td>
+                        <td>B</td>
+                    </tr>
+                    <tr>
+                        <td>C</td>
+                        <td>D</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "A,B\nC,D\n");
+
         // more complex
         let html = r#"
         <html>
