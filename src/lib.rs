@@ -204,6 +204,29 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_formula_injection_sanitization() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td>=SUM(A1:A2)</td>
+                        <td>+1</td>
+                        <td>-1</td>
+                        <td>@SUM</td>
+                        <td>normal</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        let csv = result[0].to_csv().unwrap();
+        assert_eq!(csv, "\t=SUM(A1:A2),\t+1,\t-1,\t@SUM,normal\n");
+    }
+
+    #[test]
     fn test_rowspan_and_colspan() {
         let html = r#"
         <html>

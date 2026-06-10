@@ -1,6 +1,16 @@
+use std::borrow::Cow;
+
 use sxd_xpath::nodeset::Node;
 
 use crate::Error;
+
+fn sanitize_formula_injection(s: &str) -> Cow<'_, str> {
+    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        Cow::Owned(format!("\t{s}"))
+    } else {
+        Cow::Borrowed(s)
+    }
+}
 
 pub struct Table<T> {
     size: (usize, usize),
@@ -102,7 +112,7 @@ where
             let mut record = csv::StringRecord::new();
             for cell in row {
                 if let Some(item) = cell {
-                    record.push_field(&item.to_string());
+                    record.push_field(&sanitize_formula_injection(&item.to_string()));
                 } else {
                     record.push_field("");
                 }
