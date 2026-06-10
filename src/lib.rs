@@ -319,4 +319,98 @@ mod tests {
             "failed to convert table to CSV"
         );
     }
+
+    #[test]
+    fn test_thead_rows_included() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Age</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>30</td>
+                        </tr>
+                        <tr>
+                            <td>Bob</td>
+                            <td>25</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "Name,Age\nAlice,30\nBob,25\n");
+    }
+
+    #[test]
+    fn test_tfoot_rows_included() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>30</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>Total</td>
+                            <td>1</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "Alice,30\nTotal,1\n");
+    }
+
+    #[test]
+    fn test_to_string_table_with_header_thead() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>100</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </body>
+        </html>
+        "#;
+        let package = sxd_html::parse_html(html);
+        let document = package.as_document();
+        let tables = extract_table_nodes_to_table(document.root()).unwrap();
+        assert_eq!(tables.len(), 1);
+        let with_header = tables[0].to_string_table_with_header();
+        let rows = with_header.rows();
+        // THEAD row: both cells should be flagged as headers (th elements)
+        assert_eq!(rows[0][0], Some(&("Name".to_string(), true)));
+        assert_eq!(rows[0][1], Some(&("Score".to_string(), true)));
+        // TBODY row: cells should not be flagged as headers (td elements)
+        assert_eq!(rows[1][0], Some(&("Alice".to_string(), false)));
+        assert_eq!(rows[1][1], Some(&("100".to_string(), false)));
+    }
 }

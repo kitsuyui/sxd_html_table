@@ -8,7 +8,7 @@ struct TableSupport<'a>(Node<'a>);
 
 impl<'a> TableSupport<'a> {
     fn tr_nodes(&self) -> Result<Vec<Node<'a>>, Error> {
-        let tr_nodes = match evaluate_xpath_node(self.0, "./tbody/tr") {
+        let tr_nodes = match evaluate_xpath_node(self.0, "./thead/tr|./tbody/tr|./tfoot/tr") {
             Ok(Value::Nodeset(tr_nodes)) => tr_nodes,
             _ => {
                 return Err(Error::InvalidDocument(
