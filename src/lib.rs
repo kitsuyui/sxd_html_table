@@ -348,6 +348,49 @@ mod tests {
     }
 
     #[test]
+    fn test_rejects_when_rowspan_fills_column_limit() {
+        let html = format!(
+            r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td rowspan="0" colspan="{}">A</td></tr>
+                    <tr><td>B</td></tr>
+                </table>
+            </body>
+        </html>
+        "#,
+            crate::node_utils::MAX_TABLE_COLUMNS
+        );
+        match extract_table_texts_from_document(&html) {
+            Err(Error::InvalidDocument(_)) => {}
+            Err(_) => panic!("expected InvalidDocument"),
+            Ok(_) => panic!("expected table extraction to fail"),
+        }
+    }
+
+    #[test]
+    fn test_rejects_colspan_larger_than_column_limit() {
+        let html = format!(
+            r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td colspan="{}">A</td></tr>
+                </table>
+            </body>
+        </html>
+        "#,
+            crate::node_utils::MAX_TABLE_COLUMNS + 1
+        );
+        match extract_table_texts_from_document(&html) {
+            Err(Error::InvalidDocument(_)) => {}
+            Err(_) => panic!("expected InvalidDocument"),
+            Ok(_) => panic!("expected table extraction to fail"),
+        }
+    }
+
+    #[test]
     fn test_error_display() {
         assert_eq!(
             Error::TableNotFound.to_string(),
