@@ -5,9 +5,10 @@ pub use crate::node_utils::extract_table_nodes_to_table;
 pub use crate::table::Table;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     TableNotFound,
-    InvalidDocument,
+    InvalidDocument(&'static str),
     FailedToConvertToCSV,
     XPathEvaluationError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -15,8 +16,8 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TableNotFound => f.write_str("table not found"),
-            Self::InvalidDocument => f.write_str("invalid document"),
+            Self::TableNotFound => f.write_str("no table found in document"),
+            Self::InvalidDocument(ctx) => write!(f, "invalid document: {ctx}"),
             Self::FailedToConvertToCSV => f.write_str("failed to convert table to CSV"),
             Self::XPathEvaluationError(err)
                 if matches!(
@@ -35,7 +36,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::XPathEvaluationError(err) => Some(err.as_ref()),
-            Self::TableNotFound | Self::InvalidDocument | Self::FailedToConvertToCSV => None,
+            Self::TableNotFound | Self::InvalidDocument(_) | Self::FailedToConvertToCSV => None,
         }
     }
 }
@@ -60,6 +61,21 @@ mod tests {
             .map(|table| table.to_string_table())
             .collect();
         Ok(tables)
+    }
+
+    #[test]
+    fn test_empty_table() {
+        let html = r#"<html><body><table></table></body></html>"#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].rows().len(), 0);
+        assert_eq!(result[0].to_csv().unwrap(), "");
+
+        let html = r#"<html><body><table><tbody></tbody></table></body></html>"#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].rows().len(), 0);
+        assert_eq!(result[0].to_csv().unwrap(), "");
     }
 
     #[test]
@@ -116,13 +132,13 @@ mod tests {
             </body>
         </html>
         "#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
 
         // empty html
         let html = r#""#;
-        let result = extract_table_texts_from_document(html).unwrap();
-        assert_eq!(result.len(), 0);
+        let result = extract_table_texts_from_document(html);
+        assert!(matches!(result, Err(Error::TableNotFound)));
     }
 
     #[test]
@@ -212,6 +228,29 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_formula_injection_sanitization() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td>=SUM(A1:A2)</td>
+                        <td>+1</td>
+                        <td>-1</td>
+                        <td>@SUM</td>
+                        <td>normal</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        let csv = result[0].to_csv().unwrap();
+        assert_eq!(csv, "\t=SUM(A1:A2),\t+1,\t-1,\t@SUM,normal\n");
+    }
+
+    #[test]
     fn test_rowspan_and_colspan() {
         let html = r#"
         <html>
@@ -252,6 +291,26 @@ mod tests {
         let result = extract_table_texts_from_document(html).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to_csv().unwrap(), "A,A,B\nC,D,E\n");
+
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr>
+                        <td colspan="0">A</td>
+                        <td>B</td>
+                    </tr>
+                    <tr>
+                        <td>C</td>
+                        <td>D</td>
+                    </tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "A,B\nC,D\n");
 
         // more complex
         let html = r#"
@@ -313,16 +372,58 @@ mod tests {
     }
 
     #[test]
-    fn error_implements_std_error() {
-        fn assert_std_error<E: StdError>() {}
-
-        assert_std_error::<Error>();
+    fn test_rejects_when_rowspan_fills_column_limit() {
+        let html = format!(
+            r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td rowspan="0" colspan="{}">A</td></tr>
+                    <tr><td>B</td></tr>
+                </table>
+            </body>
+        </html>
+        "#,
+            crate::node_utils::MAX_TABLE_COLUMNS
+        );
+        match extract_table_texts_from_document(&html) {
+            Err(Error::InvalidDocument(_)) => {}
+            Err(_) => panic!("expected InvalidDocument"),
+            Ok(_) => panic!("expected table extraction to fail"),
+        }
     }
 
     #[test]
-    fn error_displays_stable_messages() {
-        assert_eq!(Error::TableNotFound.to_string(), "table not found");
-        assert_eq!(Error::InvalidDocument.to_string(), "invalid document");
+    fn test_rejects_colspan_larger_than_column_limit() {
+        let html = format!(
+            r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td colspan="{}">A</td></tr>
+                </table>
+            </body>
+        </html>
+        "#,
+            crate::node_utils::MAX_TABLE_COLUMNS + 1
+        );
+        match extract_table_texts_from_document(&html) {
+            Err(Error::InvalidDocument(_)) => {}
+            Err(_) => panic!("expected InvalidDocument"),
+            Ok(_) => panic!("expected table extraction to fail"),
+        }
+    }
+
+    #[test]
+    fn test_error_display() {
+        assert_eq!(
+            Error::TableNotFound.to_string(),
+            "no table found in document"
+        );
+        assert_eq!(
+            Error::InvalidDocument("XPath ./tbody/tr did not return a nodeset").to_string(),
+            "invalid document: XPath ./tbody/tr did not return a nodeset"
+        );
         assert_eq!(
             Error::FailedToConvertToCSV.to_string(),
             "failed to convert table to CSV"
@@ -331,6 +432,13 @@ mod tests {
             Error::from(sxd_xpath::Error::NoXPath).to_string(),
             "failed to evaluate XPath: XPath was empty"
         );
+    }
+
+    #[test]
+    fn error_implements_std_error() {
+        fn assert_std_error<E: StdError>() {}
+
+        assert_std_error::<Error>();
     }
 
     #[test]
@@ -343,13 +451,107 @@ mod tests {
     #[test]
     fn error_converts_to_boxed_error_with_question_mark() {
         fn use_question_mark() -> Result<(), Box<dyn StdError>> {
-            Err(Error::InvalidDocument)?;
+            Err(Error::InvalidDocument("context"))?;
             Ok(())
         }
 
         assert_eq!(
             use_question_mark().unwrap_err().to_string(),
-            "invalid document"
+            "invalid document: context"
         );
+    }
+
+    #[test]
+    fn test_thead_rows_included() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Age</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>30</td>
+                        </tr>
+                        <tr>
+                            <td>Bob</td>
+                            <td>25</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "Name,Age\nAlice,30\nBob,25\n");
+    }
+
+    #[test]
+    fn test_tfoot_rows_included() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>30</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>Total</td>
+                            <td>1</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_csv().unwrap(), "Alice,30\nTotal,1\n");
+    }
+
+    #[test]
+    fn test_to_string_table_with_header_thead() {
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alice</td>
+                            <td>100</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </body>
+        </html>
+        "#;
+        let package = sxd_html::parse_html(html);
+        let document = package.as_document();
+        let tables = extract_table_nodes_to_table(document.root()).unwrap();
+        assert_eq!(tables.len(), 1);
+        let with_header = tables[0].to_string_table_with_header();
+        let rows = with_header.rows();
+        // THEAD row: both cells should be flagged as headers (th elements)
+        assert_eq!(rows[0][0], Some(&("Name".to_string(), true)));
+        assert_eq!(rows[0][1], Some(&("Score".to_string(), true)));
+        // TBODY row: cells should not be flagged as headers (td elements)
+        assert_eq!(rows[1][0], Some(&("Alice".to_string(), false)));
+        assert_eq!(rows[1][1], Some(&("100".to_string(), false)));
     }
 }

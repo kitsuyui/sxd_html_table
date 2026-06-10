@@ -18,7 +18,7 @@ For example, you can convert an HTML table tag to a CSV file.
 ## Usage
 
 ```rust
-use sxd_html_table::Table;
+use sxd_html_table::{extract_table_nodes_to_table, Error, Table};
 
 let html = r#"
 <table>
@@ -44,10 +44,29 @@ fn extract_table_texts_from_document(html: &str) -> Result<Vec<Table<String>>, E
     Ok(tables)
 }
 
-let table = extract_table_texts_from_document(html).unwrap();
+let tables = extract_table_texts_from_document(html).unwrap();
+let table = tables.first().unwrap();
 let csv = table.to_csv().unwrap();
 assert_eq!(csv, "header1,header2\ndata1,data2\n");
 ```
+
+## Development
+
+This repository uses [lefthook](https://lefthook.dev/) to run the same checks as CI
+locally, so problems surface before they reach CI.
+
+```sh
+# Install the Git hooks (once; requires lefthook on your PATH)
+lefthook install
+```
+
+Once installed, the hooks run automatically:
+
+- **pre-commit**: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`
+- **pre-push**: the above plus `cargo test`
+
+CI still runs the full suite (see `.github/workflows/`); the hooks only bring that
+feedback earlier on your machine.
 
 ## License
 

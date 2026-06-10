@@ -35,6 +35,20 @@ jobs:
 
       - run: cargo build --release --all-features
 
+      - name: verify release tag matches crate version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          tag_name="$RELEASE_TAG_NAME"
+          tag_version="${tag_name#v}"
+          crate_version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "::error::Release tag '$tag_name' does not match Cargo.toml version '$crate_version'."
+            exit 1
+          fi
+
       - name: publish (dry-run)
         if: github.event_name == 'release' && github.event.release.prerelease
         run: cargo publish --dry-run
