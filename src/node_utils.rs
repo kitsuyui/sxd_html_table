@@ -94,8 +94,18 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
             }
         }
     }
-    let rows = map.keys().map(|(i, _)| i).max().unwrap_or(&0) + 1;
-    let cols = map.keys().map(|(_, j)| j).max().unwrap_or(&0) + 1;
+    let rows = map
+        .keys()
+        .map(|(i, _)| i)
+        .max()
+        .map(|&i| i + 1)
+        .unwrap_or(0);
+    let cols = map
+        .keys()
+        .map(|(_, j)| j)
+        .max()
+        .map(|&j| j + 1)
+        .unwrap_or(0);
     let mut table = Table::new((rows, cols));
     for ((i, j), item) in map {
         table.set(i, j, item);

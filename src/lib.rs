@@ -40,6 +40,21 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_table() {
+        let html = r#"<html><body><table></table></body></html>"#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].rows().len(), 0);
+        assert_eq!(result[0].to_csv().unwrap(), "");
+
+        let html = r#"<html><body><table><tbody></tbody></table></body></html>"#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].rows().len(), 0);
+        assert_eq!(result[0].to_csv().unwrap(), "");
+    }
+
+    #[test]
     fn test_find_table_from_document() {
         // found 1 table
         let html = r#"
