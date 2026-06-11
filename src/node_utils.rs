@@ -6,6 +6,22 @@ use crate::{element_utils, table::Table, Error};
 
 pub(crate) const MAX_TABLE_COLUMNS: usize = 1000;
 
+impl Table<Node<'_>> {
+    pub fn to_string_table(&self) -> Table<String> {
+        self.map(|_, _, node| node.string_value())
+    }
+
+    pub fn to_string_table_with_header(&self) -> Table<(String, bool)> {
+        self.map(|_, _, node| {
+            let Some(element) = node.element() else {
+                return (node.string_value(), false);
+            };
+            let is_header = element.name() == "th".into();
+            (node.string_value(), is_header)
+        })
+    }
+}
+
 struct TableSupport<'a>(Node<'a>);
 
 impl<'a> TableSupport<'a> {
