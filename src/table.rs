@@ -96,22 +96,29 @@ where
     T: std::fmt::Display,
 {
     pub fn write_csv(&self, writer: &mut impl std::io::Write) -> Result<(), Error> {
-        let mut writer = csv::Writer::from_writer(writer);
-        for row in &self.rows() {
-            let mut record = csv::StringRecord::new();
-            for cell in row {
-                if let Some(item) = cell {
-                    record.push_field(&sanitize_formula_injection(&item.to_string()));
-                } else {
-                    record.push_field("");
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut csv_writer = csv::Writer::from_writer(&mut buf);
+            for row in &self.rows() {
+                let mut record = csv::StringRecord::new();
+                for cell in row {
+                    if let Some(item) = cell {
+                        record.push_field(&sanitize_formula_injection(&item.to_string()));
+                    } else {
+                        record.push_field("");
+                    }
                 }
+                csv_writer
+                    .write_record(&record)
+                    .map_err(|_| Error::FailedToConvertToCSV)?;
             }
-            writer
-                .write_record(&record)
+            csv_writer
+                .flush()
                 .map_err(|_| Error::FailedToConvertToCSV)?;
         }
-        writer.flush().map_err(|_| Error::FailedToConvertToCSV)?;
-        Ok(())
+        writer
+            .write_all(&buf)
+            .map_err(|_| Error::FailedToConvertToCSV)
     }
 
     pub fn to_csv(&self) -> Result<String, Error> {
