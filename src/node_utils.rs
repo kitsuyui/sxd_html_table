@@ -47,7 +47,7 @@ pub fn evaluate_xpath_node<'a>(
 }
 
 fn extract_table_nodes<'a>(node: impl Into<Node<'a>>) -> Result<Vec<Node<'a>>, Error> {
-    let val = evaluate_xpath_node(node, "//table").map_err(Error::XPathEvaluationError)?;
+    let val = evaluate_xpath_node(node, "//table").map_err(Error::from)?;
     let Value::Nodeset(table_nodes) = val else {
         unreachable!("//table XPath always returns a Nodeset");
     };
