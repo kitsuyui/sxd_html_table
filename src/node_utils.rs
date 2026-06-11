@@ -81,8 +81,9 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
                 ));
             };
             let (mut row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
-            if row_size == 0 {
-                row_size = tr_nodes.len() - row_index;
+            let remaining_rows = tr_nodes.len() - row_index;
+            if row_size == 0 || row_size > remaining_rows {
+                row_size = remaining_rows;
             }
             while col_index < MAX_TABLE_COLUMNS && map.contains_key(&(row_index, col_index)) {
                 col_index += 1;
