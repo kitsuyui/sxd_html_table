@@ -21,6 +21,7 @@ jobs:
     env:
       # For incremental builds
       CARGO_INCREMENTAL: 1
+      CARGO_LLVM_COV_VERSION: 0.8.7
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         # For incremental builds
@@ -43,7 +44,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-llvm-cov-${{ env.CARGO_LLVM_COV_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
 
       - run: cargo fmt --all -- --check
 
@@ -53,5 +54,5 @@ jobs:
 
       - name: coverage
         run: |
-          cargo install cargo-llvm-cov || true  # when already cached
+          cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
           cargo llvm-cov --lcov --output-path coverage.lcov
