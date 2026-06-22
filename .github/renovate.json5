@@ -2,5 +2,25 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>kitsuyui/renovate-config"
+  ],
+  "packageRules": [
+    {
+      /**
+       * Automerge minor and patch crate updates.
+       * Major version updates require explicit review.
+       */
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      /**
+       * Automerge digest-pin updates for GitHub Actions.
+       * These are non-breaking pinning updates.
+       */
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true
+    }
   ]
 }
