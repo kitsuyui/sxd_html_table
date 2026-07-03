@@ -89,6 +89,7 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
     let t = TableSupport(node.into());
     let tr_nodes = t.tr_nodes()?;
     for (row_index, tr_node) in tr_nodes.iter().enumerate() {
+        let mut rowspan_zero_seen = false;
         for td_node in t.td_nodes(*tr_node)? {
             let mut col_index = 0;
             let Some(element) = td_node.element() else {
@@ -98,7 +99,14 @@ fn node_to_table<'a>(node: impl Into<Node<'a>>) -> Result<Table<Node<'a>>, Error
             };
             let (mut row_size, col_size) = element_utils::extract_rowspan_and_colspan(element);
             let remaining_rows = tr_nodes.len() - row_index;
-            if row_size == 0 || row_size > remaining_rows {
+            if row_size == 0 {
+                if rowspan_zero_seen {
+                    row_size = 1;
+                } else {
+                    row_size = remaining_rows;
+                    rowspan_zero_seen = true;
+                }
+            } else if row_size > remaining_rows {
                 row_size = remaining_rows;
             }
             while col_index < MAX_TABLE_COLUMNS && map.contains_key(&(row_index, col_index)) {

@@ -575,4 +575,28 @@ mod tests {
         // table has exactly 3 rows, not 99999
         assert_eq!(result[0].to_csv().unwrap(), "a,b\na,c\na,d\n");
     }
+
+    #[test]
+    fn test_rowspan_zero_multiple_in_same_row() {
+        // When a row has multiple rowspan=0 cells, only the first one spans to the
+        // end of the row group. Subsequent rowspan=0 cells are treated as rowspan=1
+        // to prevent state-machine ambiguity (multiple cells competing for the same
+        // row-group span).
+        let html = r#"
+        <html>
+            <body>
+                <table>
+                    <tr><td rowspan="0">a</td><td rowspan="0">b</td></tr>
+                    <tr><td>c</td></tr>
+                </table>
+            </body>
+        </html>
+        "#;
+        let result = extract_table_texts_from_document(html).unwrap();
+        assert_eq!(result.len(), 1);
+        // "a" spans both rows (first rowspan=0 in the row).
+        // "b" appears only in row 0 (second rowspan=0 treated as rowspan=1).
+        // "c" fills row 1 at col 1.
+        assert_eq!(result[0].to_csv().unwrap(), "a,b\na,c\n");
+    }
 }
