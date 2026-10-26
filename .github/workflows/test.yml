@@ -54,5 +54,7 @@ jobs:
 
       - name: coverage
         run: |
-          cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
+          cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked --force
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+          test "$(command -v cargo-llvm-cov)" = "${CARGO_HOME:-$HOME/.cargo}/bin/cargo-llvm-cov"
           cargo llvm-cov --lcov --output-path coverage.lcov
