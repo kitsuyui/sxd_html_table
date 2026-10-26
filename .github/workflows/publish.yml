@@ -56,8 +56,6 @@ jobs:
       - name: publish (dry-run)
         if: github.event_name == 'release' && github.event.release.prerelease
         run: cargo publish --dry-run
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: package
         if: github.event_name == 'release' && !github.event.release.prerelease
@@ -69,8 +67,13 @@ jobs:
         with:
           subject-path: target/package/*.crate
 
+      - name: Authenticate to crates.io
+        if: github.event_name == 'release' && !github.event.release.prerelease
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: publish
         if: github.event_name == 'release' && !github.event.release.prerelease
         run: cargo publish --no-verify
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
